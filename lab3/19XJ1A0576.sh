@@ -2,10 +2,10 @@
 
 if [ $# -eq 0 ] # if no args
 then
-    grep "model name" -m 1 /proc/cpuinfo
-    echo "kernel version: " `uname -r`
-    grep "MemTotal" -m 1 /proc/meminfo
-    echo "system uptime since boot: " `cut -d " " -f 1 /proc/uptime` " seconds" # 1st number fom /proc/uptime
+    grep "model name" -m 1 /proc/cpuinfo | cut -d ":" -f 2 | sed 's/^ *//g'
+    uname -r
+    grep "MemTotal" -m 1 /proc/meminfo | awk '{print $2}'
+    cut -d " " -f 1 /proc/uptime # 1st number fom /proc/uptime
     exit
 fi
 
@@ -15,7 +15,7 @@ then
     exit
 fi
 
-# required lated for calulating average
+# required later for calulating average
 user_perc=0
 kernel_perc=0
 idle_perc=0
@@ -96,15 +96,15 @@ do
     if [ $i -ge $2 ]
     then
         i=0
-        echo -n "Percentage CPU in user mode  : "; echo $user_perc/$samples | bc -l
-        echo -n "Percentage CPU in kernel mode: "; echo $kernel_perc/$samples | bc -l
-        echo -n "Percentage CPU in idle mode  : "; echo $idle_perc/$samples | bc -l
-        echo -n "Amount of memory available   : "; echo $available_mem kB
-        echo -n "Percentage memory available  : "; echo $available_mem_perc/$samples | bc -l
-        echo -n "Sectors read per second      : "; echo $sectors_read_delta/$samples | bc -l
-        echo -n "Sectors written per second   : "; echo $sectors_written_delta/$samples | bc -l
-        echo -n "Context switches per second  : "; echo $context_switch_delta/$samples | bc -l
-        echo -n "Processes born per second    : "; echo $processes_delta/$samples | bc -l
+        echo $user_perc/$samples | bc -l # Percentage CPU in user mode
+        echo $kernel_perc/$samples | bc -l # Percentage CPU in kernel mode
+        echo $idle_perc/$samples | bc -l # Percentage CPU in idle mode        
+        echo $available_mem # Amount of memory available 
+        echo $available_mem_perc/$samples | bc -l # Percentage memory available
+        echo $sectors_read_delta/$samples | bc -l # Sectors read per second    
+        echo $sectors_written_delta/$samples | bc -l # Sectors written per second 
+        echo $context_switch_delta/$samples | bc -l # Context switches per second
+        echo $processes_delta/$samples | bc -l # Processes born per second  
         echo --------------------------------------------------------------------
         
         # reset average calculators
