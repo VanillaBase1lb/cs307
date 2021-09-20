@@ -2,20 +2,20 @@
 
 if [ $# -eq 0 ] # if no args
 then
-    grep "model name" -m 1 /proc/cpuinfo | cut -d ":" -f 2 | sed 's/^ *//g'
-    uname -r
-    grep "MemTotal" -m 1 /proc/meminfo | awk '{print $2}'
-    cut -d " " -f 1 /proc/uptime # 1st number fom /proc/uptime
+    grep "model name" -m 1 /proc/cpuinfo
+    echo "kernel version: " `uname -r`
+    grep "MemTotal" -m 1 /proc/meminfo
+    echo "system uptime since boot: " `cut -d " " -f 1 /proc/uptime` " seconds" # 1st number fom /proc/uptime
     exit
 fi
 
 if [ $(($2%$1)) -ne 0 ]
 then
     echo Enter printout_rate as a whole multiple of read_rate
-    exit
+    exit 0
 fi
 
-# required later for calulating average
+# required lated for calulating average
 user_perc=0
 kernel_perc=0
 idle_perc=0
@@ -35,8 +35,8 @@ total_time_start=$((${total_time_start// /+})) # replace all spaces with +
 user_time_start=`awk 'NR==1 {print $2}' /proc/stat` # read 2nd arg from line 1
 kernel_time_start=`awk 'NR==1 {print $4}' /proc/stat`
 idle_time_start=`awk 'NR==1 {print $5}' /proc/stat`
-sectors_read_start=$(awk 'NR==1 {print $6}' /proc/diskstats)
-sectors_written_start=$(awk 'NR==1 {print $10}' /proc/diskstats)
+sectors_read_start=$(grep sda /proc/diskstats | awk 'NR==1 {print $6}')
+sectors_written_start=$(grep sda /proc/diskstats | awk 'NR==1 {print $10}')
 context_switch_start=$(grep "ctxt" -m 1 /proc/stat | cut -d " " -f 2)
 processes_start=$(grep "processes" -m 1 /proc/stat | cut -d " " -f 2)
 
@@ -55,8 +55,8 @@ do
     total_mem=$(awk 'NR==1 {print $2}' /proc/meminfo)
     available_mem=$(awk 'NR==3 {print $2}' /proc/meminfo)
     # read diskstats
-    sectors_read=$(awk 'NR==1 {print $6}' /proc/diskstats)
-    sectors_written=$(awk 'NR==1 {print $10}' /proc/diskstats)
+    sectors_read=$(grep sda /proc/diskstats | awk 'NR==1 {print $6}')
+    sectors_written=$(grep sda /proc/diskstats | awk 'NR==1 {print $10}')
     # read context switches
     context_switch=$(grep "ctxt" -m 1 /proc/stat | cut -d " " -f 2)
     # read processes
@@ -96,15 +96,15 @@ do
     if [ $i -ge $2 ]
     then
         i=0
-        echo $user_perc/$samples | bc -l # Percentage CPU in user mode
-        echo $kernel_perc/$samples | bc -l # Percentage CPU in kernel mode
-        echo $idle_perc/$samples | bc -l # Percentage CPU in idle mode        
-        echo $available_mem # Amount of memory available 
-        echo $available_mem_perc/$samples | bc -l # Percentage memory available
-        echo $sectors_read_delta/$samples | bc -l # Sectors read per second    
-        echo $sectors_written_delta/$samples | bc -l # Sectors written per second 
-        echo $context_switch_delta/$samples | bc -l # Context switches per second
-        echo $processes_delta/$samples | bc -l # Processes born per second  
+        echo -n "Percentage CPU in user mode  : "; echo $user_perc/$samples | bc -l
+        echo -n "Percentage CPU in kernel mode: "; echo $kernel_perc/$samples | bc -l
+        echo -n "Percentage CPU in idle mode  : "; echo $idle_perc/$samples | bc -l
+        echo -n "Amount of memory available   : "; echo $available_mem kB
+        echo -n "Percentage memory available  : "; echo $available_mem_perc/$samples | bc -l
+        echo -n "Sectors read per second      : "; echo $sectors_read_delta/$samples | bc -l
+        echo -n "Sectors written per second   : "; echo $sectors_written_delta/$samples | bc -l
+        echo -n "Context switches per second  : "; echo $context_switch_delta/$samples | bc -l
+        echo -n "Processes born per second    : "; echo $processes_delta/$samples | bc -l
         echo --------------------------------------------------------------------
         
         # reset average calculators
