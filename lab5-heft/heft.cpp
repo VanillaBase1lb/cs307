@@ -4,12 +4,9 @@
 #include <iomanip>
 #include <numeric>
 #include <algorithm>
+#define MAX_TIME 10000
 
 using namespace std;
-
-int job_count;
-int processor_count;
-vector<vector<int>> communication_cost_dag;
 
 class Processor {
 public:
@@ -20,16 +17,19 @@ public:
 
 class Job {
 public:
-    float computaion_avg;
+    float computaion_avg; // avg. computation cost across all processors
     float rank;
-    int processor_exec;
-    int st;
-    int ft;
+    int processor_exec; // the processor on which the job was finally scheduled
+    int st; // start time in final schedule
+    int ft; // finish time in final schedule
     vector<Processor> processors;
-    vector<int> parents;
+    vector<int> parents; // indexes of all the parents of a particular node
 };
 
 vector<Job> jobs;
+int job_count; // number of jobs
+int processor_count; // number of processors
+vector<vector<int>> communication_cost_dag; // communication cost DAG in adjacency matrix form
 
 // initializes all the data from input.txt
 void initializeData() {
@@ -110,50 +110,63 @@ vector<int> sortRank() {
     return index;
 }
 
+// searches for gaps in between jobs on a processor and returns where the insertion should be
+int jobInsertion(int search_end, vector<vector<bool>> &processor_state, int job_index, int processor_index, int search_start) {
+    int t = jobs[job_index].processors[processor_index].computation_cost;
+    int counter = 0;
+    for (int i = search_start; i < search_end; i++) {
+        if (processor_state[processor_index][i] == false) {
+            counter++;
+        }
+        else {
+            counter = 0;
+        }
+        if (counter == t) { // as soon as a compatible gap is found, return its location
+            return i;
+        }
+    }
+    return max(search_end, search_start); // if no gaps were found, resume the scheduling as normal
+}
+
 // calculate earliest start and finish times of all jobs
 void schedule(vector<int> rank_index_sorted) {
-    vector<int> processor_available(processor_count, 0); // time at which the processor will be availabe, initially 0
-    int processor_current = -1; // the processsor that was used most recently, useful for communication cost calculation
-    int parent_job_delay = 0; // delay added to processor_available when a job is dependent on its parent and has to be executed only after it finishes
-    int parent_node = -1;
-    int parent_processor = -1;
+    vector<int> processor_free(processor_count, 0); // time at which the processor will be free after its latest job
+    int processor_current = -1; // same as job[ii].processor_exec, just for code simplicity
+    vector<int> parent_job_delay(job_count, 0); // delay added to processor_free, accounting for finish times of all parent nodes and communication costs
+    vector<vector<bool>> processor_state(processor_count, vector<bool>(MAX_TIME, false)); // defines the state of processors at each time unit, max time limit is MAX_TIME
 
-    // first job schedule
-    processor_current = min_element(jobs[0].processors.begin(), jobs[0].processors.end(), [](Processor &a, Processor &b) -> bool {
-        return a.computation_cost < b.computation_cost;
-    }) - jobs[0].processors.begin(); // min_element returns reference to the min element in vector, substracting it with reference of first element gives the index of minimum element
-    jobs[0].st = 0;
-    jobs[0].ft = jobs[0].processors[processor_current].computation_cost;
-    processor_available[processor_current] = jobs[0].ft;
-    jobs[0].processor_exec = processor_current;
-    for (int i = 0; i < processor_count; i++) {
-        jobs[0].processors[i].est = 0;
-        jobs[0].processors[i].eft = jobs[0].processors[i].computation_cost;
-    }
-
-    // scheduling rest of the jobs
-    for (int i = 1; i < job_count; i++) {
+    // scheduling jobs
+    for (int i = 0; i < job_count; i++) {
         int ii = rank_index_sorted[i]; // for making the code simpler
-        if (communication_cost_dag[rank_index_sorted[i - 1]][ii] > 0) {
-            parent_job_delay = jobs[rank_index_sorted[i - 1]].ft;
-            parent_node = rank_index_sorted[i - 1];
-            parent_processor = processor_current;
-        }
-        for (int j = 0; j < processor_count; j++) {
-            if (j == parent_processor)
-                jobs[ii].processors[j].est = max(parent_job_delay, processor_available[j]);
+        vector<vector<int>> processor_ready(processor_count); // time when the processor is ready, including communication cost but stores the data for all parent nodes
+
+        for (int j = 0; j < processor_count; j++) { // for each processor w.r.t each job
+            for (int k = 0; k < jobs[ii].parents.size(); k++) { // for each parent node of the job calculate ready times
+                if (jobs[jobs[ii].parents[k]].processor_exec != j) // if processor different from the processor parent was executed on, add communication cost delay
+                    processor_ready[j].push_back(communication_cost_dag[jobs[ii].parents[k]][ii] + jobs[jobs[ii].parents[k]].ft);
+                else // if on same processor, ignore communication cost
+                    processor_ready[j].push_back(jobs[jobs[ii].parents[k]].ft);
+            }
+            if (processor_ready[j].size() > 0) // final delay on the processor for each job, this considers everythin
+                parent_job_delay[j] = *max_element(processor_ready[j].begin(), processor_ready[j].end());
             else
-                jobs[ii].processors[j].est = max(parent_job_delay + communication_cost_dag[rank_index_sorted[parent_node]][ii], processor_available[j]);
+                parent_job_delay[j] = 0;
+            jobs[ii].processors[j].est = jobInsertion(processor_free[j], processor_state, ii, j, parent_job_delay[j]);
             jobs[ii].processors[j].eft = jobs[ii].processors[j].est + jobs[ii].processors[j].computation_cost;
         }
-        // pick processor with lowest EFT
+
         processor_current = min_element(jobs[ii].processors.begin(), jobs[ii].processors.end(), [](Processor &a, Processor &b) -> bool {
             return a.eft < b.eft;
         }) - jobs[ii].processors.begin(); // min_element returns reference to the min element in vector, substracting it with reference of first element gives the index of minimum element
+
         jobs[ii].st = jobs[ii].processors[processor_current].est;
         jobs[ii].ft = jobs[ii].processors[processor_current].eft;
         jobs[ii].processor_exec = processor_current;
-        processor_available[processor_current] = jobs[ii].ft;
+        processor_free[processor_current] = jobs[ii].ft;
+
+        for (int j = jobs[ii].st; j < jobs[ii].ft; j++) { // update the state of processor to reflect that processor was in use for the entire duration of job execution
+            processor_state[processor_current][j] = true;
+        }
     }
 }
 
@@ -165,21 +178,21 @@ int main(int argc, char *argv[]) {
     cout << "\nThe upward rank values:" << endl;
 
     computationAvgCalculate();
+
     for (int i = 0; i < job_count; i++) {
         jobs[i].rank = rankCalculate(i);
         cout << "Task " << i + 1 << ": " <<  fixed << setprecision(6) << jobs[i].rank << endl;
     }
+
     vector<int> rank_index_sorted = sortRank();
-    
     cout << "\nThe order of tasks to be scheduled:" << endl;
-    
     for (int i = 0; i < job_count; i++) {
         cout << rank_index_sorted[i] + 1 << " ";
     }
-    cout << "\n\nEST and EFT on different processors" << endl;
 
     schedule(rank_index_sorted);
-    
+
+    cout << "\n\nEST and EFT on different processors" << endl;
     for (int i = 0; i < job_count; i++) {
         cout << "Task: " << i + 1 << endl;
         for (int j = 0; j < processor_count; j++) {
@@ -188,6 +201,16 @@ int main(int argc, char *argv[]) {
         cout << endl;
     }
     
+    cout << "\nFinal Schedule:" << endl;
+    for (int i = 0; i < job_count; i++) {
+        cout << "Task " << i + 1 << " is executed on processor " << jobs[i].processor_exec + 1 << " from time " << jobs[i].st << " to " << jobs[i].ft << endl;
+    }
+    
+    int schedule_length; // schedule length has to be calculated since a job with higher upper rank can finish after the lowest rank job
+    schedule_length = jobs[max_element(jobs.begin(), jobs.end(), [](Job &a, Job &b) -> bool {
+        return a.ft < b.ft;
+    }) - jobs.begin()].ft;
+    cout << "\nHence, the makespan length from the schedule: " << schedule_length << endl;
 
     return 0;
 }
