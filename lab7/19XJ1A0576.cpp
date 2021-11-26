@@ -3,7 +3,8 @@
 #include <vector>
 #include <ctime>
 
-#define LOOPS 2000
+#define LOOPS 10000
+#define EQULIBRIUM_TIME 9000
 #define MEM_SIZE 1048576 // 1MB
 
 using namespace std;
@@ -51,12 +52,14 @@ void processInsert(int process_size, int process_start) {
 
     if (process_list.size() == 0) {
         process_list.push_back(*temp_process);
+        delete temp_process;
         return;
     }
 
     for (int i = 0; i < process_list.size(); i++) { // sort by start
         if (process_start < process_list[i].start) {
             process_list.insert(process_list.begin() + i, *temp_process);
+            delete temp_process;
             return;
         }
     }
@@ -67,28 +70,65 @@ void processInsert(int process_size, int process_start) {
 
 // adds process to the memory by removing/resizing holes and returns starting position of the process
 int processAdd(int mode, int process_size) {
-    int temp;
+    int temp1 = MEM_SIZE;
+    int temp2 = -1;
 
     switch (mode) {
     case 1: // best fit
+        for (int i = 0; i < memory_hole.size(); i++) { // go through all holes
+            if (memory_hole[i].size > process_size && memory_hole[i].size - process_size < temp1) { // if hole is better fitting than last one
+                temp1 = memory_hole[i].size - process_size;
+                temp2 = i;
+            }
+            else if (memory_hole[i].size == process_size) { // best fit hole
+                temp1 = memory_hole[i].start;
+                memory_hole.erase(memory_hole.begin() + i);
+                return temp1;
+            }
+        }
+
+        temp1 = memory_hole[temp2].start;
+        memory_hole[temp2].start += process_size;
+        memory_hole[temp2].size -= process_size;
+        return temp1;
         break;
+
     case 2: // worst fit
+        for (int i = 0; i < memory_hole.size(); i++) { // go through all holes
+            if (memory_hole[i].size >= process_size && memory_hole[i].size - process_size > temp2) { // if hole is worst fitting than last one
+                temp2 = memory_hole[i].size - process_size;
+                temp1 = i;
+            }
+        }
+
+        if (memory_hole[temp1].size == process_size) {
+            temp2 = memory_hole[temp1].start;
+            memory_hole.erase(memory_hole.begin() + temp1);
+            return temp2;
+        }
+
+        temp2 = memory_hole[temp1].start;
+        memory_hole[temp1].start += process_size;
+        memory_hole[temp1].size -= process_size;
+        return temp2;
         break;
+
     case 3: // first fit
         for (int i = 0; i < memory_hole.size(); i++) { // go through all holes
             if (memory_hole[i].size > process_size) { // if the hole is big enough, shrink it
-                temp = memory_hole[i].start;
+                temp1 = memory_hole[i].start;
                 memory_hole[i].start += process_size;
                 memory_hole[i].size -= process_size;
-                return temp;
+                return temp1;
             }
             else if (memory_hole[i].size == process_size) { // if the hole is just big enough, remove it
-                temp = memory_hole[i].start;
+                temp1 = memory_hole[i].start;
                 memory_hole.erase(memory_hole.begin() + i);
-                return temp;
+                return temp1;
             }
         }
         break;
+
     default:
         break;
     }
@@ -114,12 +154,14 @@ void holeInsert(int hole_size, int hole_start) {
 
     if (memory_hole.size() == 0) {
         memory_hole.push_back(*temp_hole);
+        delete temp_hole;
         return;
     }
 
     for (int i = 0; i < memory_hole.size(); i++) { // sort by start
         if (hole_start < memory_hole[i].start) {
             memory_hole.insert(memory_hole.begin() + i, *temp_hole);
+            delete temp_hole;
             return;
         }
     }
@@ -152,7 +194,7 @@ void processRemove() {
         }
     }
     if (!touching_hole) {
-        printf("inserting hole\n");
+        printf("removing process\n");
         holeInsert(process_list[r].size, process_list[r].start);
     }
     process_list.erase(process_list.begin() + r); // remove the process
@@ -164,7 +206,7 @@ int main(int argc, char **argv) {
     holeInsert(MEM_SIZE, 0); // initialize empty memory as the first hole
 
     for (int i = 0; i < LOOPS; i++) { // run the simulation LOOPS number of times
-        int process_size = processSizeGenerator(atoi(argv[1])); // first generate a random process size
+        int process_size = processSizeGenerator(atoi(argv[1])); // generate a random process size
         while (!processCanFit(process_size)) { // check if the process can fit in existing holes, continue until it can
             processRemove(); // remove a process randolmly
         }
