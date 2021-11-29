@@ -3,8 +3,8 @@
 #include <vector>
 #include <ctime>
 
-#define LOOPS 10000
-#define EQULIBRIUM_TIME 9000
+#define LOOPS 31972 // 1000 more than equilibrium time
+#define EQUILIBRIUM_TIME 30972
 #define MEM_SIZE 1048576 // 1MB
 
 using namespace std;
@@ -24,6 +24,14 @@ class MemoryHole {
 
 vector<MemoryHole> memory_hole(0); // all free memory spaces aka holes
 vector<Process> process_list(0); // list of all processes
+int timestep = 0;
+float fragmentation_avg = 0, fragmentation_max = 0, fragmentation_min = MEM_SIZE;
+float hole_size_avg = 0, hole_count_avg = 0, hole_count_max = 0, hole_count_min = MEM_SIZE;
+float hole_examined_avg = 0;
+float process_count_avg = 0, process_count_max = 0, process_count_min = MEM_SIZE;
+float process_size_avg = 0;
+int process_add_count = 0, process_add_count_max = 0;
+int process_remove_count = 0, process_remove_count_max = 0;
 
 // creates new processes and returns its size
 int processSizeGenerator(int mode) {
@@ -45,7 +53,16 @@ int processSizeGenerator(int mode) {
 
 // inserts processes in process_list in ascending order
 void processInsert(int process_size, int process_start) {
-    printf("%d %d\n", process_start, process_size);
+    /* printf("%d %d\n", process_start, process_size); */
+    if (timestep >= EQUILIBRIUM_TIME) {
+        process_add_count++;
+
+        if (process_remove_count > process_remove_count_max) {
+            process_remove_count_max = process_remove_count;
+        }
+        process_remove_count = 0;
+    }
+
     Process *temp_process = new Process;
     temp_process->size = process_size;
     temp_process->start = process_start;
@@ -76,6 +93,9 @@ int processAdd(int mode, int process_size) {
     switch (mode) {
     case 1: // best fit
         for (int i = 0; i < memory_hole.size(); i++) { // go through all holes
+            if (timestep >= EQUILIBRIUM_TIME) {
+                hole_examined_avg++;
+            }
             if (memory_hole[i].size > process_size && memory_hole[i].size - process_size < temp1) { // if hole is better fitting than last one
                 temp1 = memory_hole[i].size - process_size;
                 temp2 = i;
@@ -95,6 +115,9 @@ int processAdd(int mode, int process_size) {
 
     case 2: // worst fit
         for (int i = 0; i < memory_hole.size(); i++) { // go through all holes
+            if (timestep >= EQUILIBRIUM_TIME) {
+                hole_examined_avg++;
+            }
             if (memory_hole[i].size >= process_size && memory_hole[i].size - process_size > temp2) { // if hole is worst fitting than last one
                 temp2 = memory_hole[i].size - process_size;
                 temp1 = i;
@@ -115,6 +138,10 @@ int processAdd(int mode, int process_size) {
 
     case 3: // first fit
         for (int i = 0; i < memory_hole.size(); i++) { // go through all holes
+            if (timestep >= EQUILIBRIUM_TIME) {
+                hole_examined_avg++;
+            }
+
             if (memory_hole[i].size > process_size) { // if the hole is big enough, shrink it
                 temp1 = memory_hole[i].start;
                 memory_hole[i].start += process_size;
@@ -194,10 +221,45 @@ void processRemove() {
         }
     }
     if (!touching_hole) {
-        printf("removing process\n");
+        /* printf("removing process\n"); */
         holeInsert(process_list[r].size, process_list[r].start);
     }
     process_list.erase(process_list.begin() + r); // remove the process
+}
+
+void log(int process_size, int process_start) {
+    float fragmentation = 0; 
+    float hole_size = 0;
+    float process_count = process_list.size();
+    float hole_count = memory_hole.size();
+
+    for (int i = 0; i < memory_hole.size(); i++) {
+        fragmentation += memory_hole[i].size;
+    }
+
+    hole_size = fragmentation / memory_hole.size(); // avg. hole size in 1 time step
+    fragmentation = fragmentation / MEM_SIZE ; // total free memory in 1 time step
+    if (fragmentation > fragmentation_max)
+        fragmentation_max = fragmentation;
+    if (fragmentation < fragmentation_min)
+        fragmentation_min = fragmentation;
+
+    fragmentation_avg += fragmentation;
+    hole_size_avg += hole_size;
+
+    process_count_avg += process_count;
+    if (process_count > process_count_max)
+        process_count_max = process_count;
+    if (process_count < process_count_min)
+        process_count_min = process_count;
+
+    process_size_avg += process_size;
+
+    hole_count_avg += hole_count;
+    if (hole_count > hole_count_max)
+        hole_count_max = hole_count;
+    if (hole_count < hole_count_min)
+        hole_count_min = hole_count;
 }
 
 int main(int argc, char **argv) {
@@ -205,18 +267,45 @@ int main(int argc, char **argv) {
 
     holeInsert(MEM_SIZE, 0); // initialize empty memory as the first hole
 
-    for (int i = 0; i < LOOPS; i++) { // run the simulation LOOPS number of times
+    for (timestep = 0; timestep < LOOPS; timestep++) { // run the simulation LOOPS number of times
         int process_size = processSizeGenerator(atoi(argv[1])); // generate a random process size
         while (!processCanFit(process_size)) { // check if the process can fit in existing holes, continue until it can
             processRemove(); // remove a process randolmly
+            if (timestep >= EQUILIBRIUM_TIME) {
+                if (process_add_count > process_add_count_max) {
+                    process_add_count_max = process_add_count;
+                }
+                process_add_count = 0;
+                process_remove_count++;
+            }
         }
         int process_start = processAdd(atoi(argv[2]), process_size); // find out which hole to add the process to
         processInsert(process_size, process_start); // add the process to process_list
+        if (timestep >= EQUILIBRIUM_TIME) {
+            log(process_size, process_start);
+        }
     }
 
-    /* for (int i = 0; i < process_list.size(); i++) { */
-    /*     printf("%d %d\n", process_list[i].start, process_list[i].size); */
-    /* } */
+    fragmentation_avg = fragmentation_avg / (LOOPS - EQUILIBRIUM_TIME);
+    printf("average fragmentation = %f\n", fragmentation_avg);
+    hole_size_avg = hole_size_avg / (LOOPS - EQUILIBRIUM_TIME);
+    printf("average hole size = %f\n", hole_size_avg);
+    hole_examined_avg = hole_examined_avg / (LOOPS - EQUILIBRIUM_TIME);
+    printf("average holes examined = %f\n", hole_examined_avg); // 2 2 is very low because of return on equal as short range
+    printf("max fragmentation = %f\n", fragmentation_max);
+    printf("min fragmentation = %f\n", fragmentation_min);
+    process_count_avg = process_count_avg / (LOOPS - EQUILIBRIUM_TIME);
+    printf("average number of processes = %f\n", process_count_avg);
+    printf("max processes = %f\n", process_count_max);
+    printf("min processes = %f\n", process_count_min);
+    process_size_avg = process_size_avg / (LOOPS - EQUILIBRIUM_TIME);
+    printf("average process size = %f\n", process_size_avg);
+    hole_count_avg = hole_count_avg / (LOOPS - EQUILIBRIUM_TIME);
+    printf("average number of holes = %f\n", hole_count_avg);
+    printf("max holes = %f\n", hole_count_max);
+    printf("min holes = %f\n", hole_count_min);
+    printf("max processes created in a row = %d\n", process_add_count_max); // mode 2 is sus
+    printf("max processes removed in a row = %d\n", process_remove_count_max); // mode 2 is sus
 
     return 0;
 }
